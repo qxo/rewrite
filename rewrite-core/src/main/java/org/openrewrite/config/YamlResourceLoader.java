@@ -317,6 +317,9 @@ public class YamlResourceLoader implements ResourceLoader {
                     Consumer<Validated<Object>> addValidation) {
         if (recipeData instanceof String) {
             String recipeName = (String) recipeData;
+            if (!Recipe.isFilteredRecipe(recipeName)) {
+                return;
+            }
             try {
                 addRecipe.accept(recipeLoader.load(recipeName, null));
             } catch (IllegalArgumentException ignored) {
@@ -332,6 +335,9 @@ public class YamlResourceLoader implements ResourceLoader {
         } else if (recipeData instanceof Map) {
             Map.Entry<String, Object> nameAndConfig = ((Map<String, Object>) recipeData).entrySet().iterator().next();
             String recipeName = nameAndConfig.getKey();
+            if (!Recipe.isFilteredRecipe(recipeName)) {
+                return;
+            }
             Object recipeArgs = nameAndConfig.getValue();
             try {
                 if (recipeArgs instanceof Map) {
@@ -400,10 +406,13 @@ public class YamlResourceLoader implements ResourceLoader {
                         internalRecipes.stream()
                 ),
                 dependencyResourceLoaders.stream().flatMap(rl -> rl.listRecipes().stream())
-        ).collect(toList());
+        ).filter(Recipe::isFilteredRecipe).collect(toList());
 
         List<RecipeDescriptor> recipeDescriptors = new ArrayList<>();
         for (Recipe recipe : internalRecipes) {
+            if (!Recipe.isFilteredRecipe(recipe)) {
+                continue;
+            }
             DeclarativeRecipe declarativeRecipe = (DeclarativeRecipe) recipe;
             declarativeRecipe.initialize(allRecipes);
             declarativeRecipe.setExamples(recipeNamesToExamples.get(recipe.getName()));

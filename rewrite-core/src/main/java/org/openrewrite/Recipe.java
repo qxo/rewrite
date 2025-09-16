@@ -41,6 +41,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptySet;
@@ -62,6 +63,24 @@ import static org.openrewrite.internal.RecipeIntrospectionUtils.dataTableDescrip
 @JsonPropertyOrder({"@c"}) // serialize type info first
 public abstract class Recipe implements Cloneable {
     public static final String PANIC = "__AHHH_PANIC!!!__";
+
+    private static Set<String> ignoredRecipes;
+    static {
+        // -Drewrite.ignoredRecipes=
+        final String ignoredRecipesStr = System.getProperty("rewrite.ignoredRecipes", "");
+        if (ignoredRecipesStr != null) {
+            Arrays.stream(ignoredRecipesStr.split("[,; ]+"))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .forEach(s -> {
+                        if (ignoredRecipes == null) {
+                            ignoredRecipes = new HashSet<>();
+                        }
+                        ignoredRecipes.add(s);
+                    });
+            System.out.println("-Drewrite.ignoredRecipes=" + ignoredRecipesStr);
+        }
+    }
 
     @SuppressWarnings("unused")
     @JsonProperty("@c")
@@ -150,8 +169,8 @@ public abstract class Recipe implements Cloneable {
                     optionField.setAccessible(true);
                     Object optionValue = optionField.get(this);
                     if (optionValue != null &&
-                        !Iterable.class.isAssignableFrom(optionValue.getClass()) &&
-                        !optionValue.getClass().isArray()) {
+                            !Iterable.class.isAssignableFrom(optionValue.getClass()) &&
+                            !optionValue.getClass().isArray()) {
                         return String.format("%s `%s`", getDisplayName(), optionValue);
                     }
                 } catch (NoSuchFieldException | IllegalAccessException ignore) {
@@ -382,9 +401,34 @@ public abstract class Recipe implements Cloneable {
      * @return The list of recipes to run.
      */
     public List<Recipe> getRecipeList() {
-        RecipeList list = new RecipeList(getName());
+        final RecipeList list = new RecipeList(getName());
         buildRecipeList(list);
-        return list.getRecipes();
+        final List<Recipe> retList = list.getRecipes();
+        if (!retList.isEmpty() && ignoredRecipes != null && !ignoredRecipes.isEmpty()) {
+            // return retList.stream().filter(x -> ignoredRecipes.contains(x.getName()) ? false
+            //     : ignoredRecipes.stream().noneMatch(prefix -> x.getName().startsWith(prefix)))
+            //     .collect(Collectors.toList());
+
+            return retList.stream().filter(Recipe::isFilteredRecipe).collect(Collectors.toList());
+        }
+        return retList;
+    }
+
+    public static boolean isFilteredRecipe(final Recipe x) {
+        final String name = x.getName();
+        return isFilteredRecipe(name);
+    }
+
+    public static boolean isFilteredRecipe(final String name) {
+        if (ignoredRecipes == null || ignoredRecipes.isEmpty()) {
+            return true;
+        }
+        final boolean show = ignoredRecipes.contains(name) ? false
+                : ignoredRecipes.stream().noneMatch(prefix -> name.startsWith(prefix));
+        if (!show) {
+            System.out.println("ignored: " + name);
+        }
+        return show;
     }
 
     /**
@@ -527,7 +571,7 @@ public abstract class Recipe implements Cloneable {
      */
     @Incubating(since = "8.31.0")
     public static Builder builder(@NlsRewrite.DisplayName @Language("markdown") String displayName,
-                                  @NlsRewrite.Description @Language("markdown") String description) {
+            @NlsRewrite.Description @Language("markdown") String description) {
         return new Builder(displayName, description);
     }
 
